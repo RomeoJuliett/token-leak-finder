@@ -1,7 +1,6 @@
 {
   "name": "token-leak-finder",
   "version": "0.1.0",
-  "private": true,
   "description": "Find out WHY your Claude Code / Codex limits run out. Local-only, reads logs already on disk.",
   "license": "MIT",
   "type": "module",

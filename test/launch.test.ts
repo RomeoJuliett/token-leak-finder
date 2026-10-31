@@ -190,8 +190,8 @@ test('package exposes both bins, builds on pack, and ships only runtime source a
     const p = JSON.parse(await readFile('package.json', 'utf8'));
     assert.deepEqual(p.bin, { 'token-leak-finder': 'dist/src/cli.js', 'token-leaks': 'dist/src/cli.js' });
     assert.deepEqual(p.files, ['dist/src/', 'README.md', 'LICENSE', 'CHANGELOG.md']);
-    assert.equal(p.private, true);
-    assert.deepEqual(p.publishConfig, { access: 'public' });
+    assert.notEqual(p.private, true);
+    assert.equal(p.publishConfig.access, 'public');
     assert.equal(p.engines.node, '>=18');
     assert.equal(p.scripts.prepack, 'npm run build');
     assert.ok((await readFile('dist/src/cli.js', 'utf8')).startsWith('#!/usr/bin/env node\n'));

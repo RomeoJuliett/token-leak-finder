@@ -8,7 +8,8 @@ import { promisify } from 'node:util';
 import { parseFile, shellFiles } from '../src/parser.js';
 import { scrub } from '../src/privacy.js';
 import { fixtures, SENTINEL } from './fixtures/generate.js';
-const run = promisify(execFile);
+const exec = promisify(execFile);
+const run = (file: string, args: string[]) => exec(file, args, { env: { ...process.env, CLAUDE_CONFIG_DIR: '', CODEX_HOME: '' } });
 async function parse(events: unknown[], source: 'claude' | 'codex' = 'codex', since = 0) { const d = await mkdtemp(join(tmpdir(), 'tlf-edge-')); try {
     const p = join(d, 'log.jsonl');
     await writeFile(p, events.map(x => JSON.stringify(x)).join('\n'));

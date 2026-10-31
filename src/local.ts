@@ -1,6 +1,7 @@
-import { readdir, stat, readFile } from 'node:fs/promises';
+import { readdir, stat, readFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { identifier } from './config.js';
+import { normalizeLogPath } from './paths.js';
 import type { Options, Source, Instruction, Mcp, SessionSummary, Analysis } from './types.js';
 export async function discover(root: string, source: Source, since: number, stats: Analysis['stats']): Promise<{
     file: string;
@@ -29,7 +30,7 @@ export async function discover(root: string, source: Source, since: number, stat
                     if (s.mtimeMs < since)
                         stats.filesFiltered++;
                     else
-                        found.push({ file: p, source });
+                        found.push({ file: await realpath(p), source });
                 }
                 catch {
                     stats.fileErrors++;
@@ -61,10 +62,12 @@ export async function localMetadata(options: Options, sessions: SessionSummary[]
 }> {
     const instructions: Instruction[] = [], mcps: Mcp[] = [];
     const projects = [...new Set(sessions.map(s => s.project).filter(p => p !== 'unknown'))];
-    const globals = [{ path: join(options.homeDir, '.claude/CLAUDE.md'), source: 'claude' }, { path: join(options.homeDir, '.codex/AGENTS.md'), source: 'codex' }];
+    const claudeConfigs = options.claudeConfigDirs ?? [join(options.homeDir, '.claude')];
+    const codexHome = options.codexHome ?? join(options.homeDir, '.codex');
+    const globals = [...claudeConfigs.map(dir => ({ path: join(dir, 'CLAUDE.md'), source: 'claude' })), { path: join(codexHome, 'AGENTS.md'), source: 'codex' }];
     for (const project of projects) {
         const ss = sessions.filter(s => s.project === project);
-        const paths = new Set([join(project, 'CLAUDE.md'), join(project, 'AGENTS.md'), join(project, '.claude/CLAUDE.md'), ...globals.filter(g => ss.some(s => s.source === g.source)).map(g => g.path)]);
+        const paths = new Set([join(project, 'CLAUDE.md'), join(project, 'AGENTS.md'), join(project, '.claude', 'CLAUDE.md'), ...globals.filter(g => ss.some(s => s.source === g.source)).map(g => g.path)]);
         for (const path of paths) {
             try {
                 const s = await stat(path);
@@ -93,8 +96,10 @@ export async function localMetadata(options: Options, sessions: SessionSummary[]
                 add(n, 'claude', scopedProjects); };
         names(x.mcpServers, scope);
         if (x.projects && typeof x.projects === 'object') {
-            for (const project of projects)
-                names(x.projects[project]?.mcpServers, [project]);
+            for (const [key, config] of Object.entries(x.projects)) {
+                const project = projects.find(p => normalizeLogPath(p) === normalizeLogPath(key));
+                if (project) names((config as any)?.mcpServers, [project]);
+            }
         }
     }
     catch {
@@ -103,10 +108,11 @@ export async function localMetadata(options: Options, sessions: SessionSummary[]
     // Read the settings only for object keys. Never retain values, arguments,
     // headers, environment variables, descriptions, commands or URLs.
     await json(join(options.homeDir, '.claude.json'), projects);
-    await json(join(options.homeDir, '.claude/settings.json'), projects);
+    for (const dir of claudeConfigs)
+        await json(join(dir, 'settings.json'), projects);
     for (const p of projects)
         await json(join(p, '.mcp.json'), [p]);
-    const toml = await configText(join(options.homeDir, '.codex/config.toml'), stats);
+    const toml = await configText(join(codexHome, 'config.toml'), stats);
     if (toml)
         for (const line of toml.split(/\r?\n/)) {
             const m = /^\s*\[mcp_servers\.(?:"([^"\n]+)"|'([^'\n]+)'|([\w-]+))\]\s*(?:#.*)?$/.exec(line);

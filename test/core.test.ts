@@ -67,7 +67,8 @@ test('analysis and report remain aggregate-only, ranked, redacted and offline', 
         assert.ok(!/sk-[A-Za-z0-9]{10}|ghp_[A-Za-z0-9]{10}/.test(s));
     }
     assert.ok(html.includes('Redacted'));
-    assert.ok(!/https?:\/\/|<link|<script\s+src/i.test(html));
+    // Permit only the offline SVG favicon, retaining the network-surface guard.
+    assert.ok(!/https?:\/\/|<link|<script\s+src/i.test(html.replace(/<link rel="icon" href="data:image\/svg\+xml,[^"<>]+">/g, '')));
     assert.ok(a.avoidablePercent <= 100);
     assert.ok(a.mcps.some(x => x.calls === 0));
 });

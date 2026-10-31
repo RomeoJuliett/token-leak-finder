@@ -116,7 +116,8 @@ test('report exposes evidence, snippets, weighted labels and separate cost lever
     assert.ok(html.includes('Calls in 30 days'));
     assert.ok(html.includes('Top files by repeat count'));
     assert.ok(!html.includes('<details><summary>Evidence'));
-    assert.ok(!/https?:\/\/|<link|<script\s+src/i.test(html));
+    // Permit only the offline SVG favicon, retaining the network-surface guard.
+    assert.ok(!/https?:\/\/|<link|<script\s+src/i.test(html.replace(/<link rel="icon" href="data:image\/svg\+xml,[^"<>]+">/g, '')));
     assert.ok(a.repeatedFiles[0].repeated >= a.repeatedFiles.at(-1).repeated);
     for (const leak of a.leaks) {
         assert.ok(leak.fix && leak.snippet && leak.evidence.length);

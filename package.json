@@ -1,0 +1,29 @@
+{
+  "name": "token-leak-finder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Find out WHY your Claude Code / Codex limits run out. Local-only, reads logs already on disk.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "token-leaks": "dist/src/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "start": "node dist/src/cli.js",
+    "demo": "npm run build && node dist/test/fixtures/generate.js && node dist/src/cli.js --claude-dir test/fixtures/data/claude --codex-dir test/fixtures/data/codex --home-dir test/fixtures/data/home --since 30d --redact --out reports/demo.html --json reports/demo.json --rules reports/suggested-rules.md"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}

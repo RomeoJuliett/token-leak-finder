@@ -73,7 +73,7 @@ export async function localMetadata(options: Options, sessions: SessionSummary[]
                 const global = globals.find(g => g.path === path);
                 const used = global ? ss.filter(s => s.source === global.source) : ss;
                 const turns = used.reduce((n, s) => n + s.turns, 0);
-                instructions.push({ project, path, bytes: s.size, estimatedTokens: Math.ceil(s.size / 4), estimatedResentTokens: Math.ceil(s.size / 4) * turns, sessions: used.length, turns });
+                instructions.push({ sources: [...new Set(used.map(s => s.source))], project, path, bytes: s.size, estimatedTokens: Math.ceil(s.size / 4), estimatedResentTokens: Math.ceil(s.size / 4) * turns, sessions: used.length, turns });
             }
             catch { }
         }

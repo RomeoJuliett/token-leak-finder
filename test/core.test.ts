@@ -54,7 +54,7 @@ test('analysis and report remain aggregate-only, ranked, redacted and offline', 
     const d = await fixtures(f);
     const a = await analyze({ claudeDir: d.claude, codexDir: d.codex, homeDir: d.home, since: 0, until: Date.now() + 2e7, redact: true, maxLineBytes: 2e6, concurrency: 2, hugeOutputTokens: 10000, contextThreshold: 100000 });
     const json = JSON.stringify(a), html = renderReport(a), rules = renderRules(a);
-    assert.equal(a.totals.total, 7 * (1000 + 100 + 120000) + 12000 + 30550 + 5100 + 3600);
+    assert.equal(a.totals.total, 7 * (1000 + 100) + 80000 + 120000 + 180000 + 300000 + 600000 + 800000 + 967000 + 12000 + 30550 + 5100 + 3600);
     assert.equal(a.sessions.length, 3);
     assert.ok(a.leaks.find(x => x.category === 'repeated_file_reads')!.estimatedTokens > 0);
     assert.ok(a.leaks.some(x => x.category === 'huge_tool_outputs'));

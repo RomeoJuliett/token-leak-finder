@@ -21,7 +21,8 @@ Usage: token-leaks [options]
   --max-line-bytes <n>        Skip larger lines before buffering (default: 8388608)
   --concurrency <1..16>       Bounded file workers (default: 4)
   --huge-output-tokens <n>    Large result threshold (default: 10000)
-  --context-threshold <n>     Large context threshold (default: 100000)
+  --context-threshold <n>     Compaction checkpoint (default: 150000)
+  --top-tier-pattern <glob>    Repeatable model-tier override (* wildcard; case-insensitive)
   --home-dir <path>           Override home for config/size checks (fixture support)
   --help, -h                  Show help
   --version, -v               Show version
@@ -67,7 +68,7 @@ async function main() {
         return;
     }
     const now = Date.now(), home = homedir();
-    const o: Options = { claudeDir: join(home, '.claude/projects'), codexDir: join(home, '.codex/sessions'), homeDir: home, since: now - 30 * 86400000, until: now, redact: false, maxLineBytes: 8 * 1024 * 1024, concurrency: 4, hugeOutputTokens: 10000, contextThreshold: 100000 };
+    const o: Options = { claudeDir: join(home, '.claude/projects'), codexDir: join(home, '.codex/sessions'), homeDir: home, since: now - 30 * 86400000, until: now, redact: false, maxLineBytes: 8 * 1024 * 1024, concurrency: 4, hugeOutputTokens: 10000, contextThreshold: 150000 };
     let out = resolve('token-leaks-report.html'), json: string | undefined, rules: string | undefined;
     const required = () => { const v = args.shift(); if (v === undefined || v.startsWith('--'))
         throw new Error('Missing flag value. Use --help.'); return v; };
@@ -91,6 +92,12 @@ async function main() {
             case '--codex-dir':
                 o.codexDir = resolve(required());
                 break;
+            case '--top-tier-pattern': {
+                const pattern = required();
+                if (!pattern.length || pattern.length > 180 || !/^[\w*.:/+@-]+$/.test(pattern)) throw new Error('Invalid model-tier glob.');
+                (o.topTierPatterns ??= []).push(pattern);
+                break;
+            }
             case '--home-dir':
                 o.homeDir = resolve(required());
                 break;
@@ -154,7 +161,7 @@ async function main() {
         await atomic(json, JSON.stringify(a, null, 2) + '\n');
     if (rules)
         await atomic(rules, renderRules(a));
-    const summary = [`Token Leak Finder v${a.version}${o.redact ? ' · Redacted' : ''}`, `${a.totals.total.toLocaleString('en-US')} tokens · ~${a.avoidablePercent}% potential avoidable traffic (estimate)`, `${a.sessions.length} sessions · ${a.projects.length} projects · ${((Date.now() - started) / 1000).toFixed(2)}s`, ...a.leaks.slice(0, 3).map((l, i) => `${i + 1}. ${l.category}: ~${l.estimatedTokens.toLocaleString('en-US')} tokens (${l.percent}%)`), `HTML: ${o.redact ? basename(out) : out}`, `Coverage: ${a.stats.malformed} malformed, ${a.stats.unknown} unknown, ${a.stats.oversized} oversized, ${a.stats.fileErrors} file errors.`, 'Local only. No conversation text in reports. Estimates overlap.'].join('\n') + '\n';
+    const summary = [`Token Leak Finder v${a.version}${o.redact ? ' · Redacted' : ''}`, `${Math.round(a.totals.weighted).toLocaleString('en-US')} limit-weighted tokens (estimate) · ~${a.avoidablePercent}% potentially avoidable`, `${a.totals.total.toLocaleString('en-US')} raw tokens · ~${Math.round(a.avoidableTokens).toLocaleString('en-US')} weighted opportunity (estimate)`, ...(['claude', 'codex'] as const).map(source => `${source}: ${a.sources[source].filesScanned} files scanned · ${a.sources[source].sessionsWithUsage} sessions with usage · ${a.sources[source].toolOnlySessions} tool-only sessions`), `${a.sessions.length} sessions · ${a.projects.length} projects · ${((Date.now() - started) / 1000).toFixed(2)}s`, ...a.leaks.slice(0, 3).map((l, i) => `${i + 1}. ${l.category}: ~${l.estimatedTokens.toLocaleString('en-US')} weighted tokens (${l.percent}%) · ~${l.rawEstimatedTokens.toLocaleString('en-US')} raw`), `HTML: ${o.redact ? basename(out) : out}`, `Coverage: ${a.stats.malformed} malformed, ${a.stats.unknown} unknown, ${a.stats.oversized} oversized, ${a.stats.fileErrors} file errors.`, 'Local only. No conversation text in reports. Cards overlap; headline uses one supported signal per session × 50%.'].join('\n') + '\n';
     if (json === '-') {
         process.stdout.write(JSON.stringify(a, null, 2) + '\n');
         process.stderr.write(summary);

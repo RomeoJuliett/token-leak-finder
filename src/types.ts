@@ -64,6 +64,7 @@ export interface Options {
     concurrency: number;
     hugeOutputTokens: number;
     contextThreshold: number;
+    topTierPatterns?: string[];
     progress?: (completed: number, total: number, bytes: number) => void;
 }
 export interface Group {
@@ -84,6 +85,13 @@ export interface SessionSummary {
     baseline: number;
     baselineReplayed: number;
     sidechain: boolean;
+    contextTokens: number;
+    contextWeightedTokens: number;
+    baselineWeightedTokens: number;
+    longContextWeightedTokens: number;
+    highContextResponses: number;
+    highContextRawTokens: number;
+    highContextWeightedTokens: number;
     longContextTokens: number;
     longContextTurns: number;
     idleRewriteTokens: number;
@@ -91,6 +99,7 @@ export interface SessionSummary {
     end: string;
 }
 export interface RepeatedRead {
+    source: Source;
     project: string;
     session: string;
     path: string;
@@ -99,12 +108,14 @@ export interface RepeatedRead {
     estimatedTokens: number;
 }
 export interface HugeOutput {
+    source: Source;
     project: string;
     session: string;
     tool: string;
     estimatedTokens: number;
 }
 export interface Instruction {
+    sources: Source[];
     project: string;
     path: string;
     bytes: number;
@@ -126,7 +137,10 @@ export interface Mcp {
 export interface Leak {
     category: string;
     title: string;
+    /** Primary estimate, in limit-weighted tokens; retained as an alias. */
     estimatedTokens: number;
+    weightedTokens: number;
+    rawEstimatedTokens: number;
     percent: number;
     why: string;
     fix: string;
@@ -142,10 +156,13 @@ export interface Analysis {
         until: string;
         days: number;
     };
-    sources: {
-        claude: number;
-        codex: number;
-    };
+    sources: Record<Source, { filesScanned: number; sessionsWithUsage: number; toolOnlySessions: number; filesWithoutUsage: number; filesWithErrors: number }>;
+    unit: 'limit-weighted tokens (estimate)';
+    topTierPatterns: string[];
+    contextBands: { label: string; responses: number; sessions: number }[];
+    highContext: { sessions: number; responses: number; compactAt: number; rawEstimatedTokens: number; weightedTokens: number };
+    avoidableRawTokens: number;
+    avoidableContributions: { session: string; source: Source; category: string; weightedTokens: number; rawEstimatedTokens: number }[];
     totals: Tokens;
     avoidableTokens: number;
     avoidablePercent: number;
@@ -159,6 +176,8 @@ export interface Analysis {
     repeatedReads: RepeatedRead[];
     hugeOutputs: HugeOutput[];
     leaks: Leak[];
+    costLevers: Leak[];
+    repeatedFiles: { path: string; projects: string[]; sessions: number; reads: number; repeated: number; estimatedTokens: number }[];
     stats: ParseStats & {
         files: number;
         filesFiltered: number;

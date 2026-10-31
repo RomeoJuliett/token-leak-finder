@@ -92,14 +92,14 @@ test('CLI rejects bad flags, overwriting logs, and overlapping outputs', async (
         await assert.rejects(run(process.execPath, ['dist/src/cli.js', ...args]));
     }
 });
-test('all ten leak categories have numeric evidence on synthetic fixtures', async (t) => {
+test('nine leak categories and a separate cost lever have numeric evidence on synthetic fixtures', async (t) => {
     const { analyze } = await import('../src/analyze.js');
     const root = await mkdtemp(join(tmpdir(), 'tlf-leaks-'));
     t.after(() => rm(root, { recursive: true, force: true }));
     const d = await fixtures(root);
     const a = await analyze({ claudeDir: d.claude, codexDir: d.codex, homeDir: d.home, since: Date.now() - 30 * 864e5, until: Date.now(), redact: true, maxLineBytes: 2e6, concurrency: 2, hugeOutputTokens: 10000, contextThreshold: 100000 });
     for (const category of ['mcp_schema_overhead', 'unused_mcp_servers', 'big_instruction_files', 'repeated_file_reads', 'huge_tool_outputs', 'long_context_no_compaction', 'resumed_idle_sessions', 'subagent_startup', 'expensive_model_share', 'big_baseline_per_session'])
-        assert.ok(a.leaks.some(l => l.category === category && l.estimatedTokens > 0 && l.evidence.length), category);
+        assert.ok([...a.leaks, ...a.costLevers].some(l => l.category === category && l.estimatedTokens > 0 && l.evidence.length), category);
     assert.ok(!a.mcps.some(m => m.name === 'mcpServers'));
     assert.equal(a.leaks.find(l => l.category === 'repeated_file_reads')!.estimatedTokens, 12000 + Math.ceil(SENTINEL.length / 4) * 7);
 });
@@ -124,7 +124,7 @@ test('MCP config scopes stay within the configured project', async (t) => {
     await mkdir(p2);
     await writeFile(join(root, '.claude.json'), JSON.stringify({ projects: { [p1]: { mcpServers: { local: { env: { key: 'SECRET_PROMPT_SENTINEL' } } } } } }));
     const options = { claudeDir: '', codexDir: '', homeDir: root, since: 0, until: Date.now(), redact: false, maxLineBytes: 1024, concurrency: 1, hugeOutputTokens: 10000, contextThreshold: 100000 };
-    const session = (project: string) => ({ id: project, project, source: 'claude' as const, model: 'x', tokens: emptyTokens(), turns: 1, peakContext: 0, compactions: 0, baseline: 0, baselineReplayed: 0, sidechain: false, longContextTokens: 0, longContextTurns: 0, idleRewriteTokens: 0, start: '', end: '' });
+    const session = (project: string) => ({ id: project, project, source: 'claude' as const, model: 'x', tokens: emptyTokens(), turns: 1, peakContext: 0, compactions: 0, baseline: 0, baselineReplayed: 0, sidechain: false, contextTokens: 0, contextWeightedTokens: 0, baselineWeightedTokens: 0, longContextWeightedTokens: 0, highContextResponses: 0, highContextRawTokens: 0, highContextWeightedTokens: 0, longContextTokens: 0, longContextTurns: 0, idleRewriteTokens: 0, start: '', end: '' });
     const stats = { ...emptyStats(), files: 0, filesFiltered: 0, fileErrors: 0, configErrors: 0, configSkipped: 0 };
     const m = await localMetadata(options, [session(p1), session(p2)], stats);
     assert.deepEqual(m.mcps[0].projects, [p1]);
@@ -133,7 +133,7 @@ test('privacy scales to many paths without leaking identifiers through evidence'
     const { privacy } = await import('../src/privacy.js');
     const { analyze } = await import('../src/analyze.js');
     const a = await analyze({ claudeDir: '/no-such-source', codexDir: '/no-such-source', homeDir: '/no-such-home', since: 0, until: Date.now(), redact: true, maxLineBytes: 1024, concurrency: 1, hugeOutputTokens: 10000, contextThreshold: 100000 });
-    a.repeatedReads = Array.from({ length: 20000 }, (_, i) => ({ project: '/private/acme', session: 'private-session', path: '/private/acme/src/' + i + '.ts', reads: 2, repeated: 1, estimatedTokens: 3 }));
+    a.repeatedReads = Array.from({ length: 20000 }, (_, i) => ({ source: 'claude' as const, project: '/private/acme', session: 'private-session', path: '/private/acme/src/' + i + '.ts', reads: 2, repeated: 1, estimatedTokens: 3 }));
     a.projects = [{ name: '/private/acme', tokens: a.totals, calls: 0, sessions: 1 }];
     a.sessions = [{ id: 'private-session' } as any];
     const start = Date.now();

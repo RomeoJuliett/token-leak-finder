@@ -2,7 +2,7 @@
 
 Find out **why Claude Code and Codex limits run out**, using the logs already on your machine. Token Leak Finder v0.1 is a local-only CLI that turns cache traffic, repeated reads, oversized tool output and startup overhead into an offline report and practical fixes.
 
-![Report screenshot — coming soon](docs/screenshot.png)
+![Token Leak Finder report (synthetic sample data, --redact)](docs/screenshot.png)
 
 Open [the synthetic, redacted sample report](docs/sample-report.html) locally in your browser. No real user logs are included in the repository.
 
@@ -173,6 +173,6 @@ Usage within a session that changes cwd is attributed to its last observed cwd. 
 
 No tokenizer, provider billing lookup, quota API, archive decompression or persistent database is included. Line buffers and file workers are bounded; per-file metadata and aggregate result tables grow with the number of responses, calls and files. JSON keeps all aggregate rows; HTML limits sessions to 20 and repeated reads/huge outputs/instruction files to 100 each.
 
-Next: explicit format-version coverage, measured schema-size metadata where safely available, incremental local indexing, per-turn cwd attribution, better shell-read recognition and richer model-tier profiles. Publishing to npm and the screenshot are pending owner actions.
+Next: explicit format-version coverage, measured schema-size metadata where safely available, incremental local indexing, per-turn cwd attribution, better shell-read recognition and richer model-tier profiles. Publishing to npm is pending an owner decision.
 
 MIT © 2026 Reco Jefferson.

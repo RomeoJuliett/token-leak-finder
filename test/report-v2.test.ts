@@ -97,7 +97,9 @@ test('report v2 and checked-in sample forbid network surfaces and retain one sha
     const { root, options } = await workspace(t), f = await fixtures(root);
     const a = await analyze({ ...options, claudeDir: f.claude, codexDir: f.codex, homeDir: f.home });
     for (const html of [renderReport(a), await readFile('docs/sample-report.html', 'utf8')]) {
-        assert.doesNotMatch(html, /https?:\/\/|\bfetch\s*\(|XMLHttpRequest|WebSocket|\bimport\s*\(|src\s*=\s*["']http|@import|url\s*\(\s*["']?http|<link\b|<script\s+src/i);
+        // The sole permitted link is an embedded favicon; every other network surface stays forbidden.
+        const withoutFavicon = html.replace(/<link rel="icon" href="data:image\/svg\+xml,[^"<>]+">/g, '');
+        assert.doesNotMatch(withoutFavicon, /https?:\/\/|\bfetch\s*\(|XMLHttpRequest|WebSocket|\bimport\s*\(|src\s*=\s*["']http|@import|url\s*\(\s*["']?http|<link\b|<script\s+src/i);
         assert.match(html, /connect-src 'none'/);
         assert.equal([...html.matchAll(/id="chart-tooltip"/g)].length, 1);
         const marks = [...html.matchAll(/<[^>]+data-tip="[^"]*"[^>]*>/g)];
@@ -105,6 +107,27 @@ test('report v2 and checked-in sample forbid network surfaces and retain one sha
         for (const [mark] of marks) { assert.match(mark, /tabindex="0"/); assert.match(mark, /aria-label="[^"<>]+"/); }
         for (const content of ['SECRET_PROMPT_SENTINEL', 'PRIVATE_INSTRUCTION_SENTINEL', 'private-project', 'session-secret', 'alice@example.test']) assert.ok(!html.includes(content));
         for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Script(script[1]);
+    }
+});
+
+test('generated report and sample exclude the rejected visual identity', async t => {
+    const { options } = await workspace(t);
+    for (const html of [renderReport(await analyze(options)), await readFile('docs/sample-report.html', 'utf8')]) {
+        assert.doesNotMatch(html, /#3b82f6|#a855f7|#ff2d78|#ff8a3d|linear-gradient|backdrop-filter/i);
+    }
+});
+
+test('favicon embeds the theme-aware logo as a data URI with no external asset', async t => {
+    const { options } = await workspace(t);
+    for (const html of [renderReport(await analyze(options)), await readFile('docs/sample-report.html', 'utf8')]) {
+        const icon = html.match(/<link rel="icon" href="(data:image\/svg\+xml,[^"<>]+)">/);
+        assert.ok(icon, 'favicon must be an inline SVG data URI');
+        const svg = decodeURIComponent(icon[1].slice('data:image/svg+xml,'.length));
+        assert.match(svg, /prefers-color-scheme:\s*dark/);
+        for (const color of ['#17181A', '#EDEAE3', '#E4572E']) assert.ok(svg.includes(color));
+        assert.match(svg, /currentColor/);
+        assert.doesNotMatch(svg, /<(?:script|image|foreignObject)|\bhref=/i);
+        assert.match(html, /class="brand-mark"[^>]*>[\s\S]*?currentColor/);
     }
 });
 
@@ -144,19 +167,26 @@ function scriptHarness(reduce = false, observer?: unknown) {
     const frames: ((time: number) => void)[] = [];
     const element = (content = '', dataset: Record<string, string> = {}) => {
         const classes = new Set<string>(), events = new Map<string, () => void>(), attrs = new Map<string, string>();
-        return { textContent: content, dataset, hidden: true, style: {} as Record<string, string>,
+        const style: Record<string, any> = { setProperty: (name: string, value: string) => { style[name] = value; } };
+        return { textContent: content, dataset, hidden: true, style,
             classList: { add: (c: string) => classes.add(c), remove: (c: string) => classes.delete(c), contains: (c: string) => classes.has(c) },
             addEventListener: (name: string, cb: () => void) => events.set(name, cb),
             setAttribute: (name: string, value: string) => attrs.set(name, value), attrs, events,
+            querySelector: (_selector: string): any => null, querySelectorAll: (_selector: string): any[] => [],
             getBoundingClientRect: () => ({ left: 10, top: 1100, bottom: 1150, width: 180, height: 42 }) };
     };
     nodes.set('theme-toggle', element()); nodes.set('headline-total', element('3.62B', { count: '3620000000' }));
     nodes.set('headline-percent', element('~25.9%', { count: '25.9' })); nodes.set('sweep-path', element()); nodes.set('chart-tooltip', element());
-    const root = element('', { theme: 'dark' }), card = element();
-    const document = { documentElement: root, getElementById: (id: string) => nodes.get(id), querySelectorAll: (selector: string) => selector === '.leak' || selector === '.reveal-pending' && card.classList.contains('reveal-pending') ? [card] : [], addEventListener: (name: string, cb: (e: any) => void) => listeners.set(name, cb) };
+    const root = element('', { theme: 'dark' }), card = element(), chart = element();
+    card.classList.add('leak');
+    const marks = Array.from({ length: 62 }, () => element());
+    chart.querySelectorAll = () => marks;
+    chart.querySelector = () => nodes.get('sweep-path');
+    const panels = [chart, card];
+    const document = { documentElement: root, getElementById: (id: string) => nodes.get(id), querySelectorAll: (selector: string) => selector === '.chart,.context,.leak' ? panels : selector === '.reveal-pending' ? panels.filter(panel => panel.classList.contains('reveal-pending')) : [], addEventListener: (name: string, cb: (e: any) => void) => listeners.set(name, cb) };
     const media = { matches: reduce, addEventListener: (_name: string, cb: (e: any) => void) => listeners.set('motion-change', cb) };
     runInNewContext(reportScript, { document, window: { addEventListener: () => {} }, localStorage: { setItem: () => { throw new Error('blocked'); } }, matchMedia: () => media, requestAnimationFrame: (cb: (time: number) => void) => { frames.push(cb); return frames.length; }, cancelAnimationFrame: () => { frames.length = 0; }, innerWidth: 430, innerHeight: 800, IntersectionObserver: observer });
-    return { nodes, root, card, listeners, frames };
+    return { nodes, root, card, chart, marks, listeners, frames };
 }
 
 test('count-up sequences totals before percentage, and reduced motion leaves final HTML intact', () => {
@@ -164,10 +194,10 @@ test('count-up sequences totals before percentage, and reduced motion leaves fin
     assert.ok(h.root.classList.contains('motion'));
     h.frames.shift()!(0);
     assert.equal(h.nodes.get('headline-total').textContent, '0');
-    h.frames.shift()!(1400);
+    h.frames.shift()!(900);
     assert.equal(h.nodes.get('headline-total').textContent, '3.62B');
     assert.equal(h.nodes.get('headline-percent').textContent, '~0.0%');
-    h.frames.shift()!(2700);
+    h.frames.shift()!(1800);
     assert.equal(h.nodes.get('headline-percent').textContent, '~25.9%');
     assert.equal(h.frames.length, 0);
     const reduced = scriptHarness(true);
@@ -185,6 +215,45 @@ test('theme toggle tolerates blocked storage; missing or failing observer keeps 
         assert.equal(h.nodes.get('theme-toggle').attrs.get('aria-label'), 'Switch to dark mode');
         assert.equal(h.card.classList.contains('reveal-pending'), false);
     }
+});
+
+test('charts draw on intersection once, cap stagger duration, and expose focused content', () => {
+    let notify: (entries: any[]) => void;
+    const observed = new Set<any>();
+    class Observer {
+        constructor(cb: typeof notify) { notify = cb; }
+        observe(panel: any) { observed.add(panel); }
+        unobserve(panel: any) { observed.delete(panel); }
+        disconnect() { observed.clear(); }
+    }
+    const h = scriptHarness(false, Observer);
+    assert.ok(h.chart.classList.contains('reveal-pending'));
+    assert.ok(h.card.classList.contains('reveal-pending'));
+    const delays = h.marks.map(mark => parseInt(mark.style['--delay']));
+    assert.equal(delays[0], 0);
+    assert.equal(Math.max(...delays), 500);
+    notify!([{ target: h.chart, isIntersecting: false }]);
+    assert.ok(h.chart.classList.contains('reveal-pending'));
+    notify!([{ target: h.chart, isIntersecting: true }]);
+    assert.equal(h.chart.classList.contains('reveal-pending'), false);
+    assert.ok(h.chart.classList.contains('is-revealed'));
+    assert.equal(observed.has(h.chart), false);
+    const frames = h.frames.length;
+    notify!([{ target: h.chart, isIntersecting: true }]);
+    assert.equal(h.frames.length, frames, 'a revealed donut must never animate again');
+    assert.equal(h.nodes.get('sweep-path').attrs.get('d'), 'M120 120 L120 -60 Z');
+    h.frames.pop()!(0);
+    h.frames.pop()!(325);
+    assert.doesNotMatch(h.nodes.get('sweep-path').attrs.get('d'), /119\.99/);
+    h.frames.pop()!(650);
+    assert.match(h.nodes.get('sweep-path').attrs.get('d'), /119\.99/);
+    h.listeners.get('focusin')!({ target: { closest: () => h.card } });
+    assert.equal(h.card.classList.contains('reveal-pending'), false);
+    assert.equal(observed.has(h.card), false);
+    h.listeners.get('motion-change')!({ matches: true });
+    assert.equal(observed.size, 0);
+    assert.equal(h.frames.length, 0);
+    assert.equal(h.root.classList.contains('motion'), false);
 });
 
 test('switching to reduced motion cancels animation and exposes the final chart state', () => {
@@ -301,7 +370,7 @@ test('context bands use solid palette fills and a separate stripe overlay after 
     a.contextBands.forEach(b => { b.responses = 10; b.sessions = 2; });
     const html = contextBands(a);
     const fills = [...html.matchAll(/<rect class="context-band"[^>]*fill="([^"]+)"[^>]*>/g)];
-    assert.deepEqual(fills.map(m => m[1]), ['#3b82f6', '#a855f7', '#ff8a3d', '#ff2d78']);
+    assert.deepEqual(fills.map(m => m[1]), ['var(--blue-pale)', 'var(--blue-mid)', 'var(--blue)', 'var(--accent)']);
     for (const [rect] of fills) assert.doesNotMatch(rect, /opacity/);
     assert.match(html, /<pattern id="context-checkpoint-stripes"/);
     assert.match(html, /<rect[^>]*x="304"[^>]*width="68"[^>]*fill="url\(#context-checkpoint-stripes\)"/);

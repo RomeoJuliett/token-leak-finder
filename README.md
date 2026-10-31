@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo/lockup-dark.svg">
+  <img src="assets/logo/lockup.svg" alt="token leak finder" width="360">
+</picture>
+
 # Token Leak Finder
 
 Find why Claude Code and Codex burn through your limits: a local-only CLI that reads existing session logs and writes one offline HTML report with practical fixes.
@@ -16,9 +21,7 @@ The first command writes `token-leaks-report.html` in your current directory, us
 
 **Launch status:** this checkout is an unpublished release candidate (`private: true`). The `npx` commands above are the intended public entry point after the first npm release. Until then, [run from source](#development). Fetching the package with npm/npx needs a registry or cache; the installed analyzer runs offline.
 
-![Synthetic, redacted Token Leak Finder report](docs/screenshot.png)
-
-[Download the synthetic sample HTML](docs/sample-report.html) and open it locally. The screenshot and sample contain synthetic data only. Reports include their own CSS, JavaScript, and SVG; there are no remote assets. The animated token donut, daily usage/avoidable timeline, context bands, leak waterfall, weighted streams, and offender sparklines work offline. Hover or focus chart marks for details. The header switches between dark and light themes (saved locally when available); the initial theme follows your system, defaulting to dark without a preference. Reduced-motion settings show final values immediately.
+[Download the synthetic sample HTML](docs/sample-report.html) and open it locally. The sample contains synthetic data only. Reports include their own CSS, JavaScript, and SVG; there are no remote assets. The paper and graphite themes use serif headline figures, flat ruled cards, and vermillion leak emphasis. The animated token donut, daily usage/avoidable timeline, context bands, leak waterfall, weighted streams, and offender sparklines work offline. Hover or focus chart marks for details. The header switches between dark and light themes (saved locally when available); the initial theme follows your system, defaulting to dark without a preference. Reduced-motion settings show final values immediately.
 
 ## What it found on my machine
 

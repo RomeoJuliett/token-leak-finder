@@ -15,6 +15,7 @@ export function privacy(a: Analysis, home: string): Analysis {
     // stay linear in report size even when there are tens of thousands of paths.
     const mappings = new Map<string, string>(), servers = new Map<string, string>();
     if (a.redacted) {
+        a.range.timeZone = 'local';
         a.projects.forEach((p, i) => mappings.set(normalizeLogPath(p.name), 'project-' + label(i)));
         a.sessions.forEach((s, i) => mappings.set(s.id, 'session-' + (i + 1)));
         let server = 0;

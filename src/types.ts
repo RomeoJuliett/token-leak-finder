@@ -76,6 +76,10 @@ export interface Group {
     calls: number;
     sessions: number;
 }
+export interface Day extends Group {
+    /** Session opportunity allocated by observed daily weighted input/cache share. */
+    avoidableTokens: number;
+}
 export interface SessionSummary {
     id: string;
     source: Source;
@@ -100,6 +104,8 @@ export interface SessionSummary {
     idleRewriteTokens: number;
     start: string;
     end: string;
+    /** Context tokens per sampled response, only for listed long-context/idle offenders. */
+    contextSparkline?: number[];
 }
 export interface RepeatedRead {
     source: Source;
@@ -158,6 +164,7 @@ export interface Analysis {
         since: string;
         until: string;
         days: number;
+        timeZone: string;
     };
     sources: Record<Source, { filesScanned: number; sessionsWithUsage: number; toolOnlySessions: number; filesWithoutUsage: number; filesWithErrors: number }>;
     unit: 'limit-weighted tokens (estimate)';
@@ -173,7 +180,7 @@ export interface Analysis {
     projects: Group[];
     models: Group[];
     tools: Group[];
-    days: Group[];
+    days: Day[];
     mcps: Mcp[];
     instructions: Instruction[];
     repeatedReads: RepeatedRead[];

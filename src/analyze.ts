@@ -5,9 +5,19 @@ import { privacy } from './privacy.js';
 import { normalizeLogPath } from './paths.js';
 import { ESTIMATES, emptyTokens, addTokens, contextCost, DEFAULT_TOP_TIER_PATTERNS, isTopTier } from './config.js';
 import type { Analysis, Options, Group, Tokens, SessionSummary, Leak } from './types.js';
+/** Local calendar keys use the analyzer's timezone; noon stepping avoids DST gaps. */
+export function localDay(timestamp: number): string {
+    const d = new Date(timestamp);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+/** Evenly spaced response samples, preserving endpoints, numeric metadata only. */
+export function downsampleContext(values: number[]): number[] {
+    if (values.length <= 40) return values.slice();
+    return Array.from({ length: 40 }, (_, i) => values[Math.round(i * (values.length - 1) / 39)]);
+}
 const round = (n: number) => Math.round(n * 10) / 10;
 export async function analyze(o: Options): Promise<Analysis> {
-    const a: Analysis = { version: '0.1.0', redacted: o.redact, range: { since: new Date(o.since).toISOString(), until: new Date(o.until).toISOString(), days: Math.ceil((o.until - o.since) / 86400000) }, sources: { claude: { filesScanned: 0, sessionsWithUsage: 0, toolOnlySessions: 0, filesWithoutUsage: 0, filesWithErrors: 0 }, codex: { filesScanned: 0, sessionsWithUsage: 0, toolOnlySessions: 0, filesWithoutUsage: 0, filesWithErrors: 0 } }, unit: 'limit-weighted tokens (estimate)', topTierPatterns: o.topTierPatterns ?? [...DEFAULT_TOP_TIER_PATTERNS], contextBands: ['<100k', '100–200k', '200–500k', '>500k'].map(label => ({ label, responses: 0, sessions: 0 })), highContext: { sessions: 0, responses: 0, compactAt: ESTIMATES.compactAt, rawEstimatedTokens: 0, weightedTokens: 0 }, avoidableRawTokens: 0, avoidableContributions: [], costLevers: [], repeatedFiles: [], totals: emptyTokens(), avoidableTokens: 0, avoidablePercent: 0, sessions: [], projects: [], models: [], tools: [], days: [], mcps: [], instructions: [], repeatedReads: [], hugeOutputs: [], leaks: [], stats: { ...emptyStats(), files: 0, filesFiltered: 0, fileErrors: 0, configErrors: 0, configSkipped: 0 }, estimates: { ...ESTIMATES, contextThreshold: o.contextThreshold, hugeOutputTokens: o.hugeOutputTokens, maxLineBytes: o.maxLineBytes }, notes: [
+    const a: Analysis = { version: '0.1.0', redacted: o.redact, range: { since: new Date(o.since).toISOString(), until: new Date(o.until).toISOString(), days: Math.ceil((o.until - o.since) / 86400000), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }, sources: { claude: { filesScanned: 0, sessionsWithUsage: 0, toolOnlySessions: 0, filesWithoutUsage: 0, filesWithErrors: 0 }, codex: { filesScanned: 0, sessionsWithUsage: 0, toolOnlySessions: 0, filesWithoutUsage: 0, filesWithErrors: 0 } }, unit: 'limit-weighted tokens (estimate)', topTierPatterns: o.topTierPatterns ?? [...DEFAULT_TOP_TIER_PATTERNS], contextBands: ['<100k', '100–200k', '200–500k', '>500k'].map(label => ({ label, responses: 0, sessions: 0 })), highContext: { sessions: 0, responses: 0, compactAt: ESTIMATES.compactAt, rawEstimatedTokens: 0, weightedTokens: 0 }, avoidableRawTokens: 0, avoidableContributions: [], costLevers: [], repeatedFiles: [], totals: emptyTokens(), avoidableTokens: 0, avoidablePercent: 0, sessions: [], projects: [], models: [], tools: [], days: [], mcps: [], instructions: [], repeatedReads: [], hugeOutputs: [], leaks: [], stats: { ...emptyStats(), files: 0, filesFiltered: 0, fileErrors: 0, configErrors: 0, configSkipped: 0 }, estimates: { ...ESTIMATES, contextThreshold: o.contextThreshold, hugeOutputTokens: o.hugeOutputTokens, maxLineBytes: o.maxLineBytes }, notes: [
             'Usage turns mean metered API responses, not user messages. All token totals include cache traffic; reasoning is a subset of output and is never added twice.',
             'Limit-weighted tokens are an estimate, not provider quota rules, money or exact savings. Weights: fresh input 1, output 5, cache read 0.1, cache write 1.25.',
             'Tool output and file-read sizes use chars / 4. Shell file inference is conservative. Repeated reads can be necessary after edits.',
@@ -45,6 +55,7 @@ export async function analyze(o: Options): Promise<Analysis> {
         groups[type].set(name, g);
     } addTokens(g.tokens, tokens); g.calls += calls; if (session)
         g.sessions++; }
+    const sessionDays = new Map<SessionSummary, Map<string, number>>();
     let next = 0, completed = 0;
     async function worker() {
         while (next < jobs.length) {
@@ -69,12 +80,13 @@ export async function analyze(o: Options): Promise<Analysis> {
                 }
                 for (const band of bands) a.contextBands[band].sessions++;
                 const tokens = emptyTokens();
-                const models = new Set<string>(), daySet = new Set<string>();
+                const models = new Set<string>(), daySet = new Set<string>(), dailyContext = new Map<string, number>();
                 for (const t of s.turns) {
                     addTokens(tokens, t.tokens);
                     group('models', t.model, t.tokens, 0, !models.has(t.model));
                     models.add(t.model);
-                    const day = new Date(t.timestamp).toISOString().slice(0, 10);
+                    const day = localDay(t.timestamp);
+                    dailyContext.set(day, (dailyContext.get(day) ?? 0) + contextCost(t.tokens));
                     group('days', day, t.tokens, 0, !daySet.has(day));
                     daySet.add(day);
                 }
@@ -101,6 +113,9 @@ export async function analyze(o: Options): Promise<Analysis> {
                     highContextResponses: s.turns.filter(t => t.context > 500000).length,
                     highContextRawTokens: s.turns.filter(t => t.context > 500000).reduce((n, t) => n + t.context - ESTIMATES.compactAt, 0),
                     highContextWeightedTokens: s.turns.filter(t => t.context > 500000).reduce((n, t) => n + (t.context - ESTIMATES.compactAt) / t.context * contextCost(t.tokens), 0), longContextTurns: long.length, idleRewriteTokens: idle, start: first ? new Date(first.timestamp).toISOString() : 'unknown', end: s.turns.length ? new Date(s.turns.at(-1)!.timestamp).toISOString() : 'unknown' };
+                sessionDays.set(sum, dailyContext);
+                if (sum.longContextTokens > 0 || sum.idleRewriteTokens > 0)
+                    sum.contextSparkline = downsampleContext(s.turns.map(t => t.context));
                 a.sessions.push(sum);
                 if (sum.highContextResponses) a.highContext.sessions++;
                 a.highContext.responses += sum.highContextResponses;
@@ -149,7 +164,15 @@ export async function analyze(o: Options): Promise<Analysis> {
     }
     await Promise.all(Array.from({ length: Math.max(1, Math.min(16, o.concurrency, jobs.length)) }, worker));
     for (const type of Object.keys(groups) as (keyof typeof groups)[])
-        a[type] = [...groups[type].values()].sort((x, y) => y.tokens.weighted - x.tokens.weighted || x.name.localeCompare(y.name));
+        if (type !== 'days') a[type] = [...groups[type].values()].sort((x, y) => y.tokens.weighted - x.tokens.weighted || x.name.localeCompare(y.name));
+    // Include every local calendar day, including empty days and partial endpoints.
+    const cursor = new Date(o.since), endDay = localDay(o.until);
+    cursor.setHours(12, 0, 0, 0);
+    while (localDay(cursor.getTime()) <= endDay) {
+        const name = localDay(cursor.getTime());
+        a.days.push({ ...(groups.days.get(name) ?? { name, tokens: emptyTokens(), calls: 0, sessions: 0 }), avoidableTokens: 0 });
+        cursor.setDate(cursor.getDate() + 1);
+    }
     a.sessions.sort((x, y) => y.tokens.weighted - x.tokens.weighted || x.id.localeCompare(y.id));
     a.repeatedReads.sort((x, y) => y.estimatedTokens - x.estimatedTokens);
     a.hugeOutputs.sort((x, y) => y.estimatedTokens - x.estimatedTokens);
@@ -179,11 +202,33 @@ export async function analyze(o: Options): Promise<Analysis> {
             m.estimatedResentTokens = m.estimatedSchemaTokens * a.sessions.filter(s => s.source === m.source && m.projects.includes(s.project)).reduce((n, s) => n + s.turns, 0);
         }
     a.mcps.sort((x, y) => y.calls - x.calls || x.name.localeCompare(y.name));
+    const listed = new Set<SessionSummary>();
+    for (const metric of ['longContextWeightedTokens', 'idleRewriteTokens'] as const)
+        a.sessions.filter(s => s[metric] > 0).sort((x, y) => y[metric] - x[metric]).slice(0, 6).forEach(s => listed.add(s));
+    for (const s of a.sessions) if (!listed.has(s)) delete s.contextSparkline;
     const safe = privacy(a, o.homeDir);
-    detectLeaks(safe);
+    const contributions = detectLeaks(safe);
+    const dayLookup = new Map(safe.days.map(d => [d.name, d]));
+    // Each session's single winning opportunity is spread across its local days in
+    // proportion to observed weighted INPUT/CACHE (output is not removable context).
+    // This is a temporal allocation, not evidence that a leak happened on that day.
+    // It keeps disjoint session budgets intact and never assigns savings to idle days.
+    a.sessions.forEach((s, i) => {
+        const share = contributions.get(safe.sessions[i]) ?? 0;
+        if (!share || !s.contextWeightedTokens) return;
+        for (const [day, weight] of sessionDays.get(s)!)
+            dayLookup.get(day)!.avoidableTokens += share * weight / s.contextWeightedTokens;
+    });
+    const allocated = safe.days.reduce((n, d) => n + d.avoidableTokens, 0);
+    const largest = safe.days.reduce<typeof safe.days[number] | undefined>((best, d) => !best || d.avoidableTokens > best.avoidableTokens ? d : best, undefined);
+    // Reconcile only the headline's tenth-token rounding on the largest allocation.
+    if (largest && allocated) largest.avoidableTokens += safe.avoidableTokens - allocated;
+    safe.notes.push('Daily charts use local calendar days in the analyzer timezone. Each session’s avoidable estimate is allocated by that day’s share of its weighted input/cache usage; empty days are zero. The largest allocation absorbs headline rounding. This is an allocation, not a measured daily saving.');
     return safe;
 }
-function detectLeaks(a: Analysis): void {
+function detectLeaks(a: Analysis): Map<SessionSummary, number> {
+    // Log files can share an identifier; preserve object identity for daily allocation.
+    const contributions = new Map<SessionSummary, number>();
     const total = a.totals.weighted;
     type Estimate = { raw: number; weighted: number };
     const combined = (values: Estimate[]): Estimate => values.reduce((n, v) => ({ raw: n.raw + v.raw, weighted: n.weighted + v.weighted }), { raw: 0, weighted: 0 });
@@ -236,9 +281,11 @@ function detectLeaks(a: Analysis): void {
         const best = candidates[0];
         if (!best.weighted) continue;
         const allowance = Math.min(1, s.contextWeightedTokens / best.weighted) * ESTIMATES.actionableFraction;
+        contributions.set(s, best.weighted * allowance);
         a.avoidableContributions.push({ session: s.id, source: s.source, category: best.category, weightedTokens: best.weighted * allowance, rawEstimatedTokens: best.raw * allowance });
     }
     a.avoidableTokens = round(a.avoidableContributions.reduce((n, c) => n + c.weightedTokens, 0));
     a.avoidableRawTokens = Math.round(a.avoidableContributions.reduce((n, c) => n + c.rawEstimatedTokens, 0));
     a.avoidablePercent = total ? round(a.avoidableTokens / total * 100) : 0;
+    return contributions;
 }

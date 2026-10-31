@@ -18,7 +18,7 @@ The first command writes `token-leaks-report.html` in your current directory, us
 
 ![Synthetic, redacted Token Leak Finder report](docs/screenshot.png)
 
-[Download the synthetic sample HTML](docs/sample-report.html) and open it locally. The screenshot and sample contain synthetic data only. Reports include their own CSS, JavaScript, and SVG; there are no remote assets.
+[Download the synthetic sample HTML](docs/sample-report.html) and open it locally. The screenshot and sample contain synthetic data only. Reports include their own CSS, JavaScript, and SVG; there are no remote assets. The animated token donut, daily usage/avoidable timeline, context bands, leak waterfall, weighted streams, and offender sparklines work offline. Hover or focus chart marks for details. The header switches between dark and light themes (saved locally when available); the initial theme follows your system, defaulting to dark without a preference. Reduced-motion settings show final values immediately.
 
 ## What it found on my machine
 
@@ -87,6 +87,10 @@ headline % = sum(opportunity across sessions) / total weighted usage × 100
 ```
 
 The **50% actionable allowance** is an explicit assumption: some context and repeated work remain useful. All signals within a session are treated as overlapping; disjoint sessions can contribute independently. JSON `avoidableContributions` records the winning signal and weighted/raw amounts. Raw savings use the same winner and allowance.
+
+Daily JSON aggregates and charts use **local calendar days in the analyzer’s timezone** (recorded as JSON `range.timeZone`; `--redact` replaces the name with `local`), including zero-usage days and partial days at the window endpoints. Each session’s single winning avoidable estimate is distributed across days in proportion to its observed **weighted input/cache usage** on each day; output has no share. This preserves session-level overlap handling and allocates nothing to idle days. Daily estimates sum to the headline; its tenth-token rounding difference is applied to the largest daily allocation. This is a temporal allocation, not proof of savings on a particular day. The three-stream area chart excludes cache writes; the main timeline and headline include them.
+
+Only the six listed offenders on each long-context and resumed-idle card retain context sparklines in JSON (`contextSparkline`): evenly spaced numeric samples, at most 40 per session, preserving first and last responses. Redacted sessions use the same aliases as card evidence.
 
 Schema/instruction replay, baseline, subagent startup, and model choice are excluded from the headline because removable overhead cannot be inferred reliably. The >500k scenario overlaps long-context findings and is not added again. No percentage promises verified quota savings.
 
@@ -161,8 +165,8 @@ node dist/src/cli.js --redact --open
 
 ```sh
 npm run build
-node dist/test/fixtures/generate.js
-node dist/src/cli.js --since 30d --redact --claude-dir test/fixtures/data/claude --codex-dir test/fixtures/data/codex --home-dir test/fixtures/data/home --out docs/sample-report.html
+node dist/test/fixtures/report-demo.js
+TZ=UTC CLAUDE_CONFIG_DIR= CODEX_HOME= node dist/src/cli.js --since 30d --redact --claude-dir test/fixtures/data/claude --codex-dir test/fixtures/data/codex --home-dir test/fixtures/data/home --out docs/sample-report.html
 ```
 
 Clear `CLAUDE_CONFIG_DIR` and `CODEX_HOME` when generating fixtures so all config discovery stays synthetic. `npm run test:package` packs and installs a tarball into a temporary directory, checks the file whitelist and both executable links, and runs a redacted fixture scan offline. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the [launch checklist](docs/LAUNCH-CHECKLIST.md).

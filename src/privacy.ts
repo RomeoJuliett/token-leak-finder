@@ -1,4 +1,5 @@
 import { extname } from 'node:path';
+import { normalizeLogPath, logPathInside } from './paths.js';
 import type { Analysis } from './types.js';
 export const PUBLIC_MCP_SERVERS = new Set(['github', 'filesystem', 'playwright', 'context7', 'memory', 'fetch', 'puppeteer', 'sequential-thinking', 'brave-search']);
 export function scrub(text: string): string {
@@ -14,7 +15,7 @@ export function privacy(a: Analysis, home: string): Analysis {
     // stay linear in report size even when there are tens of thousands of paths.
     const mappings = new Map<string, string>(), servers = new Map<string, string>();
     if (a.redacted) {
-        a.projects.forEach((p, i) => mappings.set(p.name, 'project-' + label(i)));
+        a.projects.forEach((p, i) => mappings.set(normalizeLogPath(p.name), 'project-' + label(i)));
         a.sessions.forEach((s, i) => mappings.set(s.id, 'session-' + (i + 1)));
         let server = 0;
         for (const m of a.mcps)
@@ -24,15 +25,18 @@ export function privacy(a: Analysis, home: string): Analysis {
                 mappings.set(m.name, alias);
             }
         const paths = [...new Set([...a.instructions.map(x => x.path), ...a.repeatedReads.map(x => x.path)])];
-        paths.forEach((p, i) => { const project = a.projects.find(v => p.startsWith(v.name + '/')); const ext = extname(p); mappings.set(p, (project ? mappings.get(project.name) : 'files') + '/file-' + (i + 1) + (/^\.[a-zA-Z0-9]{1,8}$/.test(ext) ? ext : '')); });
+        paths.forEach((p, i) => { const project = a.projects.find(v => logPathInside(v.name, p)); const ext = extname(p); mappings.set(normalizeLogPath(p), (project ? mappings.get(normalizeLogPath(project.name)) : 'files') + '/file-' + (i + 1) + (/^\.[a-zA-Z0-9]{1,8}$/.test(ext) ? ext : '')); });
     }
     function string(s: string): string {
         if (!a.redacted)
             return s;
-        const exact = mappings.get(s);
+        const exact = mappings.get(s) ?? mappings.get(normalizeLogPath(s));
         if (exact)
             return scrub(exact);
         s = s.replace(/^mcp__([^_].*?)__/, (_match, name: string) => 'mcp__' + (servers.get(name) ?? name) + '__').replace(/^mcp\.([\w-]+)\./, (_match, name: string) => 'mcp.' + (servers.get(name) ?? name) + '.');
+        const normalized = normalizeLogPath(s), normalizedHome = normalizeLogPath(home).replace(/\/$/, '');
+        if (normalized === normalizedHome || normalized.startsWith(normalizedHome + '/'))
+            s = '~' + normalized.slice(normalizedHome.length);
         return scrub(s.split(home).join('~'));
     }
     function walk(value: any): any { if (typeof value === 'string')

@@ -53,7 +53,10 @@ export interface ParsedSession {
 }
 export interface Options {
     claudeDir: string;
+    claudeDirs?: string[];
+    claudeConfigDirs?: string[];
     codexDir: string;
+    codexHome?: string;
     homeDir: string;
     since: number;
     until: number;

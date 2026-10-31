@@ -1,4 +1,5 @@
-import { basename, resolve, extname } from 'node:path';
+import { basename, extname } from 'node:path';
+import { normalizeLogPath, resolveLogPath } from './paths.js';
 import { lines, emptyStats } from './reader.js';
 import { emptyTokens, finishTokens, num, identifier, pathValue } from './config.js';
 import type { ParsedSession, Source, Turn, Tokens, ToolCall } from './types.js';
@@ -21,18 +22,24 @@ function lengthOf(x: unknown): number { if (typeof x === 'string')
     return typeof o.text === 'string' ? o.text.length : typeof o.content === 'string' ? o.content.length : Array.isArray(o.content) ? lengthOf(o.content) : 0;
 } return 0; }
 function filePath(v: unknown, cwd: string): string | undefined { const p = pathValue(v); if (!p || p.startsWith('-') || p.includes('://') || /[\n\r<>|;$`]/.test(p) || p.length > 1000)
-    return; return resolve(cwd === 'unknown' ? '.' : cwd, p); }
+    return; return resolveLogPath(cwd, p); }
 // Conservative shell inference: literal cat/sed/rg operands only, never execute
 // commands, never retain command strings, search patterns or inline scripts.
 export function shellFiles(input: any, cwd: string): string[] {
     let command = input.command ?? input.cmd;
+    const commandArray = Array.isArray(command);
     if (Array.isArray(command))
         command = command.map((v: any) => typeof v === 'string' ? JSON.stringify(v) : '').join(' ');
     if (typeof command !== 'string' || command.length > 100000)
         return [];
     const found = new Set<string>();
     for (const part of command.split(/\n|&&|\|\||[;|]/)) {
-        const words = (part.match(/"(?:[^"\\]|\\.)*"|'[^']*'|[^\s]+/g) ?? []).map(w => w.replace(/^(['"])(.*)\1$/, '$2'));
+        const words = (part.match(/"(?:[^"\\]|\\.)*"|'[^']*'|[^\s]+/g) ?? []).map(w => {
+            if (commandArray && w.startsWith('"')) {
+                try { return JSON.parse(w) as string; } catch { /* Literal shell path. */ }
+            }
+            return w.replace(/^(['"])(.*)\1$/, '$2');
+        });
         const at = words.findIndex(w => ['cat', 'sed', 'rg'].includes(w));
         if (at < 0)
             continue;
@@ -58,7 +65,7 @@ export function shellFiles(input: any, cwd: string): string[] {
             }
             if (w === '>' || w === '>>')
                 break;
-            if (!w.includes('/') && !extname(w))
+            if (!/[\\/]/.test(w) && !extname(w))
                 continue;
             const p = filePath(w, cwd);
             if (p)
@@ -73,7 +80,7 @@ export async function parseFile(file: string, source: Source, options: {
     until?: number;
     maxLineBytes: number;
 }): Promise<ParsedSession> {
-    const s: ParsedSession = { id: identifier(basename(file, '.jsonl')), source, project: 'unknown', sidechain: file.includes('/subagents/'), turns: [], tools: [], reads: [], compactions: 0, compactionTimes: [], stats: emptyStats() };
+    const s: ParsedSession = { id: identifier(basename(file, '.jsonl')), source, project: 'unknown', sidechain: /[\\/]subagents[\\/]/.test(file), turns: [], tools: [], reads: [], compactions: 0, compactionTimes: [], stats: emptyStats() };
     const turns = new Map<string, {
         turn: Turn;
         usage: Obj;
@@ -163,7 +170,7 @@ export async function parseFile(file: string, source: Source, options: {
             if (metadata) {
                 const cwd = pathValue(source === 'claude' ? e.cwd : p.cwd);
                 if (cwd)
-                    s.project = cwd;
+                    s.project = normalizeLogPath(cwd);
                 if (source === 'claude' && e.sessionId && s.id === identifier(basename(file, '.jsonl')))
                     s.id = identifier(e.sessionId, s.id) + (s.sidechain ? ':' + identifier(basename(file, '.jsonl')) : '');
                 if (source === 'codex' && e.type === 'session_meta') {

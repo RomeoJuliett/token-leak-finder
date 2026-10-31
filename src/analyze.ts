@@ -2,6 +2,7 @@ import { emptyStats } from './reader.js';
 import { parseFile } from './parser.js';
 import { discover, localMetadata } from './local.js';
 import { privacy } from './privacy.js';
+import { normalizeLogPath } from './paths.js';
 import { ESTIMATES, emptyTokens, addTokens, contextCost, DEFAULT_TOP_TIER_PATTERNS, isTopTier } from './config.js';
 import type { Analysis, Options, Group, Tokens, SessionSummary, Leak } from './types.js';
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -24,9 +25,17 @@ export async function analyze(o: Options): Promise<Analysis> {
         source: 'claude' | 'codex';
     }[] = [];
     if (o.only !== 'codex')
-        jobs.push(...await discover(o.claudeDir, 'claude', o.since, a.stats));
+        for (const root of new Set(o.claudeDirs ?? [o.claudeDir]))
+            jobs.push(...await discover(root, 'claude', o.since, a.stats));
     if (o.only !== 'claude')
         jobs.push(...await discover(o.codexDir, 'codex', o.since, a.stats));
+    // Overlapping roots and symlinked config directories must not count a log twice.
+    const seen = new Set<string>();
+    jobs.splice(0, jobs.length, ...jobs.filter(job => {
+        const key = job.source + ':' + normalizeLogPath(job.file);
+        if (seen.has(key)) return false;
+        seen.add(key); return true;
+    }));
     jobs.sort((x, y) => x.file.localeCompare(y.file));
     a.stats.files = jobs.length;
     for (const job of jobs) a.sources[job.source].filesScanned++;
@@ -49,7 +58,7 @@ export async function analyze(o: Options): Promise<Analysis> {
             }
             s.turns = s.turns.filter(t => t.tokens.total > 0);
             if (!s.turns.length) a.sources[s.source].filesWithoutUsage++;
-            if ((s.turns.length || s.tools.length) && (!o.project || s.project.toLowerCase().includes(o.project.toLowerCase()))) {
+            if ((s.turns.length || s.tools.length) && (!o.project || s.project.toLowerCase().includes(normalizeLogPath(o.project.replace(/\\/g, '/')).toLowerCase()))) {
                 if (s.turns.length) a.sources[s.source].sessionsWithUsage++;
                 else a.sources[s.source].toolOnlySessions++;
                 const bands = new Set<number>();

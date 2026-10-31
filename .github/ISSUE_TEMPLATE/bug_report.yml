@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a parser, CLI, or report problem using safe aggregate evidence.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never paste raw logs, conversation text, tool bodies, credentials, or config values.
+        Use synthetic examples where possible. Inspect redacted aggregate excerpts before sharing.
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. Windows 11, macOS 15, Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      description: Output of node --version.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Tool versions
+      description: Token Leak Finder, Claude Code, and/or Codex versions. Do not include account identifiers.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Reproduction and expected behavior
+      description: Describe the command with private paths replaced, what happened, and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: aggregate
+    attributes:
+      label: Redacted aggregate excerpt (optional)
+      description: Run token-leak-finder --redact --json analysis.json. Share only relevant reviewed totals/stats/estimates or a synthetic excerpt. NEVER paste raw session logs or an entire private report.
+      render: json
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I reviewed this report and included no raw logs, private conversation/tool text, secrets, or identifying paths.
+          required: true

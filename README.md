@@ -1,11 +1,21 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logo/lockup-dark.svg">
-  <img src="assets/logo/lockup.svg" alt="token leak finder" width="360">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/RomeoJuliett/token-leak-finder/main/assets/logo/lockup-dark.svg">
+  <img src="https://raw.githubusercontent.com/RomeoJuliett/token-leak-finder/main/assets/logo/lockup.svg" alt="token leak finder" width="360">
 </picture>
 
 # Token Leak Finder
 
-Find why Claude Code and Codex burn through your limits: a local-only CLI that reads existing session logs and writes one offline HTML report with practical fixes.
+Find why Claude Code and Codex burn through your limits: a local CLI that turns existing session logs into an offline HTML report with practical fixes.
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT">
+  <img src="https://img.shields.io/badge/node-%3E%3D18-green" alt="Node >=18">
+  <img src="https://img.shields.io/badge/runs%20locally-no%20network-brightgreen" alt="runs locally — no network">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/RomeoJuliett/token-leak-finder/main/assets/readme/demo.gif" alt="Token Leak Finder: 30-second explainer" width="720">
+</p>
 
 ## 30-second quickstart
 
@@ -19,21 +29,37 @@ npx token-leak-finder --redact --open
 
 The first command writes `token-leaks-report.html` in your current directory, using the last **30 days**. `--open` launches your default browser on that local file. Use `--redact` before taking screenshots or sharing output. `token-leaks` is an equivalent executable name.
 
-**Launch status:** this checkout is an unpublished release candidate (`private: true`). The `npx` commands above are the intended public entry point after the first npm release. Until then, [run from source](#development). Fetching the package with npm/npx needs a registry or cache; the installed analyzer runs offline.
+**Launch status:** Unpublished release candidate (`private: true`); [run from source](#development) until the first npm release. The `npx` commands above will then be the public entry point; fetching the package needs a registry or cache, while the installed analyzer runs offline.
 
-[Download the synthetic sample HTML](docs/sample-report.html) and open it locally. The sample contains synthetic data only. Reports include their own CSS, JavaScript, and SVG; there are no remote assets. The paper and graphite themes use serif headline figures, flat ruled cards, and vermillion leak emphasis. The animated token donut, daily usage/avoidable timeline, context bands, leak waterfall, weighted streams, and offender sparklines work offline. Hover or focus chart marks for details. The header switches between dark and light themes (saved locally when available); the initial theme follows your system, defaulting to dark without a preference. Reduced-motion settings show final values immediately.
+[Download the synthetic sample HTML](https://github.com/RomeoJuliett/token-leak-finder/blob/main/docs/sample-report.html) and open it locally. The sample contains synthetic data only. Reports include their own CSS, JavaScript, and SVG; there are no remote assets. The paper and graphite themes use serif headline figures, flat ruled cards, and vermillion leak emphasis. The animated token donut, daily usage/avoidable timeline, context bands, leak waterfall, weighted streams, and offender sparklines work offline. Hover or focus chart marks for details. The header switches between dark and light themes (saved locally when available); the initial theme follows your system, defaulting to dark without a preference. Reduced-motion settings show final values immediately.
 
 ## What it found on my machine
 
-One real, redacted 30-day scan (these are observations from one machine, not expected savings):
+<p align="center">
+  <img src="https://raw.githubusercontent.com/RomeoJuliett/token-leak-finder/main/assets/readme/report.png" alt="Redacted Token Leak Finder report, dark theme" width="860">
+</p>
 
-- **3.62B limit-weighted tokens** in 30 days; **27.0B raw**, almost all cache reads.
-- **~25.9% likely avoidable**, using the conservative overlap method below.
-- Long chats past 150k without compaction: **51.6%** of weighted usage across **524 sessions**. **59 sessions** ran past 500k for **17,782 responses**.
-- Idle-session cache rewrites: **2.4%**; MCP schema overhead: **0.9%**; heavy session start: **0.7%**; barely-used MCP servers: **0.5%**.
+A real report, run with --redact.
+
+One real, redacted scan over the rolling 30 days (observations from one machine, not expected savings):
+
+- **3.64B limit-weighted tokens**; **27.2B raw**, almost all cache reads.
+- **~25.7% likely avoidable**, using the conservative overlap method below.
+- Long chats past 150k without compaction: **51.3%** of weighted usage. **59 sessions** ran past 500k context; peak near **967k**.
+- Idle-session cache rewrites: **2.3%**; MCP schema overhead: **0.9%**; heavy session start: **0.7%**; barely-used MCP servers: **0.5%**.
+- Repeated file reads: **0.4%**; huge tool outputs: **0.4%**.
 - Opus/high-reasoning models: **99.8%** of weighted usage, shown separately as a model-choice lever.
+- Scanned **409 Claude Code sessions** and **447 Codex sessions** (**83,970 responses**).
 
 Individual categories overlap. A category's percentage is its estimated share of weighted usage, not a proven reduction in provider limits. No real-log report is included here.
+
+## The one-line fix
+
+Add this to `CLAUDE.md` / `AGENTS.md`:
+
+```text
+- Near 150k context tokens, write a short handoff (decisions, next steps), then /compact or start fresh.
+```
 
 ## What each leak means
 
@@ -172,7 +198,7 @@ node dist/test/fixtures/report-demo.js
 TZ=UTC CLAUDE_CONFIG_DIR= CODEX_HOME= node dist/src/cli.js --since 30d --redact --claude-dir test/fixtures/data/claude --codex-dir test/fixtures/data/codex --home-dir test/fixtures/data/home --out docs/sample-report.html
 ```
 
-Clear `CLAUDE_CONFIG_DIR` and `CODEX_HOME` when generating fixtures so all config discovery stays synthetic. `npm run test:package` packs and installs a tarball into a temporary directory, checks the file whitelist and both executable links, and runs a redacted fixture scan offline. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the [launch checklist](docs/LAUNCH-CHECKLIST.md).
+Clear `CLAUDE_CONFIG_DIR` and `CODEX_HOME` when generating fixtures so all config discovery stays synthetic. `npm run test:package` packs and installs a tarball into a temporary directory, checks the file whitelist and both executable links, and runs a redacted fixture scan offline. See [CONTRIBUTING.md](https://github.com/RomeoJuliett/token-leak-finder/blob/main/CONTRIBUTING.md), [SECURITY.md](https://github.com/RomeoJuliett/token-leak-finder/blob/main/SECURITY.md), and the [launch checklist](https://github.com/RomeoJuliett/token-leak-finder/blob/main/docs/LAUNCH-CHECKLIST.md).
 
 ## Roadmap
 
@@ -184,4 +210,4 @@ Clear `CLAUDE_CONFIG_DIR` and `CODEX_HOME` when generating fixtures so all confi
 
 ## License
 
-[MIT](LICENSE) © 2026 Reco Jefferson.
+[MIT](https://github.com/RomeoJuliett/token-leak-finder/blob/main/LICENSE) © 2026 Reco Jefferson.
